@@ -1,0 +1,11 @@
+RewriteEngine on
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}\.php -f
+RewriteRule ^(.*)$ $1.php
+RewriteRule ^api/([a-zA-Z0-9_-]+)$ apifunction.php?function=$1 [L]
+#Options -Indexes
+#RewriteCond %{HTTPS} off
+#RewriteCond %{HTTP_HOST} !^www\.
+#RewriteRule ^(.*)$ https://www.%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+#AddHandler application/x-httpd-php56 .php
+

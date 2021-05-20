@@ -1,0 +1,1707 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>CoWIN Vaccination Slot Booking App</title>
+    <meta name="author" content="Bhavy Patel (#GBVP)"/>
+    <meta name="Description" content="CoWIN Vaccination Slot Booking App Demonstration with JQuery Terminal"/>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-mousewheel/3.1.13/jquery.mousewheel.min.js"></script>
+    <script src="js/jquery.terminal-2.23.2.min.js"></script>
+    <script src="js/ascii_table.js"></script>
+    <link href="css/jquery.terminal-2.23.2.min.css" rel="stylesheet"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style type="text/css">
+        svg{
+            background: white!important;
+        }
+        /*table {
+          font-family: arial, sans-serif;
+          border-collapse: collapse;
+          width: 100%;
+        }
+
+        td, th {
+          border: 1px solid #dddddd;
+          text-align: left;
+          padding: 8px;
+        }*/
+
+    </style>
+  </head>
+<body>
+
+<script>
+var audio = new Audio('http://gujarathelpline.in/alert.mp3');
+audio.play();
+var term,mobile,otp,token,txnId,token_valid,valid_captcha;
+var running_loop = false;
+
+var collected_details,old_data,search_date;
+
+var refined_beneficiaries,beneficiary_dtls,locations,locations_districts,fee_type,location_dtls,options,stucked_center = [];
+var vaccine_type,search_option,search_state_id,search_district_id,minimum_slots,refresh_freq,start_date,auto_book,min_age_booking,choice,choice_option,vaccine_url,new_req,dose_type = null;
+
+var sec_animation = false;
+var sec_timer;
+var sec_prompt;
+var sec_string;
+
+function progress(percent, width) {
+        var size = Math.round(width*percent/100);
+        var left = '', taken = '', i;
+        for (i=size; i--;) {
+            taken += '=';
+        }
+        if (taken.length > 0) {
+            taken = taken.replace(/=$/, '>');
+        }
+        for (i=width-size; i--;) {
+            left += ' ';
+        }
+        return '[' + taken + left + '] ' + percent + '%';
+    }
+
+async function timerloop(term,history,refresh_freq){
+    console.log('Timer');
+    return new Promise((resolve,reject)=>{
+        // var i = 0, size = refresh_freq;
+        // sec_prompt = term.get_prompt();
+        // sec_string = progress(0, size);
+        // term.set_prompt(progress);
+        // sec_animation = true;
+        // (async function loop() {
+        //     sec_string = progress(i++, size);
+        //     term.set_prompt(sec_string);
+        //     if (i < 100) {
+        //         sec_timer = setTimeout(loop, 100);
+        //     } else {
+        //         term.echo(progress(i, size))
+        //             .set_prompt(sec_prompt);
+        //         sec_animation = false;
+        //         resolve(true);
+        //     }
+        // })();
+        var animation = false;
+        var timer;
+        var prompt;
+        var spinner;
+        var i;
+        function start(term, spinner) {
+            animation = true;
+            i = 0;
+            function set() {
+                var text = spinner.frames[i++ % spinner.frames.length];
+                term.set_prompt(text);
+            };
+            prompt = term.get_prompt();
+            term.find('.cursor').hide();
+            set();
+            timer = setInterval(set, spinner.interval);
+        }
+        function stop(term, spinner) {
+            setTimeout(function() {
+                clearInterval(timer);
+                var frame = spinner.frames[i % spinner.frames.length];
+                term.set_prompt(prompt).echo(frame);
+                animation = false;
+                term.find('.cursor').show();
+            }, 0);
+        }
+
+        spinner = {
+            "interval": 100,
+            "frames": [
+                "🕛 ",
+                "🕚 ",
+                "🕙 ",
+                "🕘 ",
+                "🕗 ",
+                "🕖 ",
+                "🕕 ",
+                "🕔 ",
+                "🕓 ",
+                "🕒 ",
+                "🕑 ",
+                "🕐 "
+            ]
+        };
+        start(term, spinner);
+        setTimeout(function(){
+            stop(term, spinner);
+            resolve(true);
+        },refresh_freq*1000);
+
+    });
+}
+
+jQuery.fn.sort = function() {  
+    return this.pushStack( [].sort.apply( this, arguments ), []);  
+};  
+
+ function sortDistrict(a,b){  
+     if (a.district == b.district){
+       return 0;
+     }
+     return a.district> b.district ? 1 : -1;  
+ };  
+ function sortPincode(a,b){  
+     if (a.pincode == b.pincode){
+       return 0;
+     }
+     return a.pincode> b.pincode ? 1 : -1;  
+ };
+
+ function sortDate(a,b){
+    if(a.date == b.date){
+        return 0;
+    }
+    var aa = a.date.split('-').reverse().join(),
+        bb = b.date.split('-').reverse().join();
+    return aa < bb ? -1 : (aa > bb ? 1 : 0);
+ }
+
+ async function validateForNextloop(term,mobile,token,history){
+    console.log('Validating token for next loop');
+    return new Promise((resolve,reject)=>{
+         $.ajax({
+            type: "POST",
+            url: "https://gujarathelpline.in/api/getBeneficiaries",
+            data:{ token: token},
+            async:false, 
+            success: async function(data){
+                if(data == 'Unauthenticated access!'){
+                    token_valid = false;
+                    audio.play();
+                    term.echo('Token is INVALID.')
+                    history.disable();
+                    term.push(async function(tryOTP){
+                        if(tryOTP == null || tryOTP == '' || tryOTP == 'y'){
+                            if(mobile != ''){
+                                term.pop();
+                                history.enable();
+                                token_valid = false;
+                                await verifyNumberByOtp(term,mobile,history).then((token) => {
+                                    resolve(true);
+                                });
+                            }
+                        }else{
+                            term.pop();
+                            history.enable();
+                            term.exec('end',true);
+                        }
+                    },
+                    {
+                        prompt:'Try for a new Token? (y/n Default y): '
+                    });
+                }else{
+                    if(token_valid){
+                        term.echo('No viable option found next update in '+refresh_freq+' seconds');
+                        await timerloop(term,history,refresh_freq).then((response)=>{
+                            resolve(true);
+                        });
+                    }
+                }
+            },
+            error:function(data){
+                // data.status
+                term.echo('TOKEN INVALID');
+            }
+        });
+
+    });
+ }
+
+async function choiceInput(term,history,mobile,token){
+    console.log('Taking User Choice');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        var prompt = '---> Wait 20 seconds for updated options OR \n---> Enter a choice e.g: 1.4 for (1st center 4th slot): ';
+        var timer = setTimeout(() => {
+            term.echo(prompt + term.get_command());
+            term.pop();
+            resolve('.');
+        }, 20000);
+        term.read(prompt).then((choice_in) => {
+            clearTimeout(timer);
+            choice = choice_in;
+            term.echo(`Your coice is ${choice}`);
+            resolve(choice_in);
+        });
+        history.enable();
+    });
+}
+
+async function loopFunction(term,history,mobile,token)
+{
+    console.log('Starting Searching');
+    return new Promise(async function(resolve,reject){
+            // alert('loop running');
+
+            // const token_valid = await check_and_book(term,mobile,token,history);
+            try {
+
+                options = [];
+                choice,new_req = null;
+                if(search_option == 2){
+                    await checkCalendarByDistrict(term,mobile,token,history,search_date,vaccine_url).then(function(options_res){
+                        options = options_res;
+                    });
+                }
+                else{
+                    await checkCalendarByPincode(term,mobile,token,history,search_date,vaccine_url).then(function(options_res){
+                        options = options_res;
+                    });
+                }
+
+                // alert('options'+options);
+                // alert('token'+token_valid);
+                if(options.length > 0){
+                    options=$(options).sort(sortDistrict).sort(sortPincode).sort(sortDate);
+
+                    tmp_options = JSON.parse(JSON.stringify(options));
+                    if(tmp_options.length > 0){
+                        //dispay tmp_options
+                        found_center_table = [['Name','District','Pincode','Available Capacity','Date','Slots']];
+                        $.each(tmp_options,function(index,key){
+                            found_center_table.push([tmp_options[index].name,tmp_options[index].district,tmp_options[index].pincode,tmp_options[index].available,tmp_options[index].date,tmp_options[index].slots]);
+                        });
+
+                        displayTable('Center found with entered criteria:',found_center_table,term,false);
+
+                        if(auto_book == 'yes-please'){
+                            term.echo("AUTO-BOOKING IS ENABLED. PROCEEDING WITH FIRST CENTRE, DATE, and RANDOM SLOT.");
+                            choice_option = options[0];
+                            random_slot = Math.floor((Math.random() * (choice_option.slots.length)) + 1);
+                            choice = '1.'+random_slot;
+
+                        }else{
+                            audio.play();
+                            await choiceInput(term,history,mobile,token).then(function(choice_res){
+                                console.log('choice is'+choice_res);
+                            })
+                        }
+
+
+                    }else{
+                        choice = '.';
+                    }
+
+                }else{
+                    choice = '.';
+                }
+            }
+            catch(err){
+                console.log(err);
+            }
+            finally{
+                if(choice == '.' || choice == null || choice == ''){
+                    // alert('continue');
+                }else{
+                    try{
+                        choice = choice.split('.');
+                        term.echo('============> Got Choice: Center #'+choice[0]+', Slot #'+choice[1]);
+                        book_beneficiary = [];
+                        $.each(beneficiary_dtls,function(index,key){
+                            book_beneficiary.push(beneficiary_dtls[index].bref_id);
+                        });
+                        // dose_type = 1;
+                        // if(beneficiary_dtls[0].status == 'Partially Vaccinated'){
+                        //     dose_type = 2;
+                        // }
+                        new_req = {
+                            'beneficiaries': book_beneficiary,
+                            'dose': dose_type,
+                            'center_id' : options[choice[0] - 1].center_id,
+                            'session_id': options[choice[0] - 1].session_id,
+                            'slot'      : options[choice[0] - 1].slots[choice[1] - 1]
+                        };
+                        term.echo('Booking with info: '+JSON.stringify(new_req));
+                        await bookAppointment(term,mobile,token,history, new_req).then((response)=>console.log('Book appointment response false'));
+                    }
+                    catch(err){
+                        console.log(err);
+                        // alert(err.message);
+                        term.echo("============> Invalid Option!");
+                    }
+                }
+
+                await validateForNextloop(term,mobile,token,history).then(function(valid_re){
+                    resolve(valid_re);
+                });
+            }
+
+        });
+    }
+
+async function bookAppointment(term,mobile,token,history, details){
+    console.log('Downloading Captch And sending for verfication');
+    return new Promise((resolve,reject)=>{
+        try{
+            valid_captcha = true;
+            while(valid_captcha){
+                audio.play();
+                // alert('Valid Captcha Loop'+valid_captcha);
+                history.disable();
+                valid_captcha = false;
+                term.echo('================================= GETTING CAPTCHA ==================================================');
+                $.post("https://gujarathelpline.in/api/getCaptcha",{token :token},function(data){
+                    if(data != '' || data != 'Unauthenticated access!'){
+                        captcha_resp = JSON.parse(data).captcha;
+                        //display this captcha;
+                        term.echo($(captcha_resp));
+                        //display end
+                        history.disable();
+                        term.push(function(captcha_code_in){
+                            if(captcha_code_in != null || captcha_code_in != ''){
+                                term.pop();
+                                history.disable();
+                                term.echo('================================= ATTEMPTING BOOKING ==================================================');
+                                details.captcha = captcha_code_in;
+
+                                $.post("https://gujarathelpline.in/api/scheduleAppointment",{token :token,details:JSON.stringify(details)},function(data){
+                                    if(data != 'invald-input'){
+                                        bookingresp = JSON.parse(data);
+                                        term.echo('Booking Response Code: '+bookingresp.errorCode);
+                                        term.echo('Booking Response : '+bookingresp.error);
+                                        if(bookingresp.status_code == 401){
+                                            term.echo('TOKEN INVALID');
+                                            valid_captcha = false;
+                                            resolve(false);
+                                        }else if(bookingresp.status_code == 200){
+                                            audio.play();
+                                            term.echo('##############    BOOKED!  ############################    BOOKED!  ##############');
+                                            term.echo('                        Hey, Hey, Hey! It\'s your lucky day!                       ');
+                                            term.echo('Exiting Program');
+                                            term.exec('end',true);
+                                        }else if(bookingresp.status_code == 400 || bookingresp.status_code == 409){
+                                            // term.echo(`Response: ${bookingresp.status_code} : ${bookingresp.error}`);
+                                            //check
+                                            resolve(false);
+                                        }else{
+                                            // term.echo(`Response: ${bookingresp.status_code} : ${bookingresp.error}`);
+                                            // return true;
+                                            valid_captcha = true;
+                                            alert('captcha loop');
+                                        }
+                                    }else{
+                                        term.echo('Invalid Token');
+                                        resolve(false);
+                                    }
+                                });
+                            }
+                        },{
+                            prompt : 'Enter Captcha Code:'
+                        });
+                    }else{
+                        resolve(false);
+                    }
+                });
+            }
+        }catch(err){
+            term.echo(err);
+            audio.play();
+            resolve(false);
+        }
+    });
+}
+
+async function checkCalendarByDistrict(term,mobile,token,history,search_date,vaccine_url=false){
+    console.log('Calender District Search');
+    return new Promise(async function(resolve,reject){
+        term.echo('===================================================================================');
+        
+
+        await districtApi(term,mobile,token,history,search_date).then(function(options_res){
+            var options = options_res;
+            if(options.length != 0){
+                $.each(location_dtls, function(index,key){
+                    $.each(options, function(index1,key1){
+                        if(location_dtls[index].district_name == options[index1].district_name){
+                            audio.play();
+                            resolve(options);
+                        }   
+                    });
+                });
+            }
+            resolve(options);
+        });        
+    });
+}
+
+async function checkCalendarByPincode(term,mobile,token,history,search_date,vaccine_url=false){
+    console.log('Calender Pincode Search');
+    return new Promise(async function(resolve,reject){
+        term.echo('===================================================================================');
+        
+        
+        await pincodeApi(term,mobile,token,history,search_date).then(function(options_res){
+            options = options_res;
+            if(options.length != 0){
+                $.each(location_dtls, function(index,key){
+                    $.each(options, function(index1,key1){
+                        if(location_dtls[index].pincode == options[index1].pincode){
+                            audio.play();
+                            resolve(options);
+                        }   
+                    });
+                });
+            }
+            resolve(options);
+        });     
+    });
+}
+
+function districtApi(term,mobile,token,history,search_date,vaccine_url=false){
+    console.log('Searching for district api');
+    return new Promise((resolve,reject)=>{
+        var temp_option = [];
+        var current = new Date();
+        // current.toLocaleString()
+         $.each(location_dtls, function(index,key){
+            // +vaccine_url
+            $.ajax({
+                url: 'https://cdn-api.co-vin.in/api/v2/appointment/sessions/calendarByDistrict?district_id='+location_dtls[index].district_id+'&date='+search_date, 
+                async:false, 
+                success: async function(data){
+                    if(data != 'Unauthenticated access!'){
+                        resp = data;
+                        if(resp.centers.length > 0){
+                            term.echo('Centers available in '+location_dtls[index].district_name+' from '+search_date+' as of '+current.toLocaleString()+': '+resp.centers.length);
+
+                            await viableOptions(resp).then(function(options_res){
+                                 temp_option = options_res;
+                            });
+
+                            $.each(temp_option,function(index1,rows){
+                                options.push(rows);
+                            });
+                            // console.log(options);     
+                        }else{
+                            term.echo('Centers available in '+location_dtls[index].district_name+' from '+search_date+' as of '+current.toLocaleString()+': 0');
+                            // term.echo('No viable option found next update in '+refresh_freq+' seconds');
+                        }          
+                    }else{
+                        term.echo('TOKEN INVALID');
+                        // return false;
+                        // term.echo('No viable option found next update in '+refresh_freq+' seconds');
+                    }
+                },
+                error:function(data){
+                    // data.status
+                    term.echo('TOKEN INVALID');
+                }
+            });
+        });
+
+        $.when.apply($, options).then(function() {
+            //do something with newArray works!! here is full
+            resolve(options);
+        });
+    });
+}
+
+async function pincodeApi(term,mobile,token,history,search_date,vaccine_url=false){
+    console.log('Searching for pincode api');
+    return new Promise((resolve,reject)=>{
+        var temp_option = [];
+        var current = new Date();
+        // current.toLocaleString()
+         $.each(location_dtls, function(index,key){
+            // +vaccine_url
+            $.ajax({
+                url: 'https://cdn-api.co-vin.in/api/v2/appointment/sessions/calendarByPin?pincode='+location_dtls[index].pincode+'&date='+search_date, 
+                async:false, 
+                success: async function(data){
+                    if(data != 'Unauthenticated access!'){
+                        resp = data;
+                        if(resp.centers.length > 0){
+                            term.echo('Centers available in '+location_dtls[index].pincode+' from '+search_date+' as of '+current.toLocaleString()+': '+resp.centers.length);
+                            
+                            await viableOptions(resp).then(function(options_res){
+                                 temp_option = options_res;
+                            });
+
+                            $.each(temp_option,function(index1,rows){
+                                options.push(rows);
+                            });
+                            // console.log(options);
+                        }else{
+                            term.echo('Centers available in '+location_dtls[index].pincode+' from '+search_date+' as of '+current.toLocaleString()+': 0');
+                            // term.echo('No viable option found next update in '+refresh_freq+' seconds');
+                        }          
+                    }else{
+                        term.echo('TOKEN INVALID');
+                        // return false;
+                        // term.echo('No viable option found next update in '+refresh_freq+' seconds');
+                    }
+                },
+                error:function(data){
+                    // data.status
+                    term.echo('TOKEN INVALID');
+                }
+            });
+        });
+
+        $.when.apply($, options).then(function() {
+            //do something with newArray works!! here is full
+            resolve(options);
+        });
+    });
+}
+
+
+
+function viableOptions(resp){
+    console.log('Checking for viable options');
+    return new Promise(async function(resolve,reject){
+        var temp_options = [];
+        // console.log('Center Conditions value');
+        // console.log(minimum_slots);
+        // console.log(vaccine_type);
+        // console.log(min_age_booking);
+        // console.log(fee_type);
+        // available_capacity_dose2":10
+
+        // var available_capacity_key = 'available_capacity_dose'+String(dose_type);
+        // alert(available_capacity_key);
+
+        if(resp.centers.length > 0){
+            if(vaccine_type != '' && vaccine_type != null){
+                if(dose_type == 1){
+                    $.each(resp.centers,function(index,key){
+                        $.each(resp.centers[index].sessions,function(index1,key1){
+                            // console.log('Center Conditions matching');
+                            // console.log(resp.centers[index].sessions[index1].available_capacity >= parseInt(minimum_slots));
+                            // console.log(resp.centers[index].sessions[index1].vaccine == vaccine_type);
+                            // console.log(resp.centers[index].sessions[index1].min_age_limit <= parseInt(min_age_booking));
+                            // console.log(jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1);
+                            if ((resp.centers[index].sessions[index1].available_capacity_dose1 >= parseInt(minimum_slots)) && (resp.centers[index].sessions[index1].vaccine == vaccine_type) && (resp.centers[index].sessions[index1].min_age_limit == min_age_booking) && (jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1)){
+
+                                out = {
+                                    'name': resp.centers[index].name,
+                                    'district': resp.centers[index].district_name,
+                                    'pincode': resp.centers[index].pincode,
+                                    'center_id': resp.centers[index].center_id,
+                                    'available': resp.centers[index].sessions[index1].available_capacity,
+                                    'date': resp.centers[index].sessions[index1].date,
+                                    'slots': resp.centers[index].sessions[index1].slots,
+                                    'session_id': resp.centers[index].sessions[index1].session_id
+                                }
+                                temp_options.push(out)
+                            }
+                        });
+                    });
+                }else if(dose_type == 2){
+                    $.each(resp.centers,function(index,key){
+                        $.each(resp.centers[index].sessions,function(index1,key1){
+                            // console.log('Center Conditions matching');
+                            // console.log(resp.centers[index].sessions[index1].available_capacity >= parseInt(minimum_slots));
+                            // console.log(resp.centers[index].sessions[index1].vaccine == vaccine_type);
+                            // console.log(resp.centers[index].sessions[index1].min_age_limit <= parseInt(min_age_booking));
+                            // console.log(jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1);
+                            if ((resp.centers[index].sessions[index1].available_capacity_dose2 >= parseInt(minimum_slots)) && (resp.centers[index].sessions[index1].vaccine == vaccine_type) && (resp.centers[index].sessions[index1].min_age_limit == min_age_booking) && (jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1)){
+
+                                out = {
+                                    'name': resp.centers[index].name,
+                                    'district': resp.centers[index].district_name,
+                                    'pincode': resp.centers[index].pincode,
+                                    'center_id': resp.centers[index].center_id,
+                                    'available': resp.centers[index].sessions[index1].available_capacity,
+                                    'date': resp.centers[index].sessions[index1].date,
+                                    'slots': resp.centers[index].sessions[index1].slots,
+                                    'session_id': resp.centers[index].sessions[index1].session_id
+                                }
+                                temp_options.push(out)
+                            }
+                        });
+                    });
+                }        
+            }else{
+                if(dose_type == 1){
+                    $.each(resp.centers,function(index,key){
+                        $.each(resp.centers[index].sessions,function(index1,key1){
+                            // console.log('Center Conditions matching');
+                            // console.log(resp.centers[index].sessions[index1].available_capacity >= parseInt(minimum_slots));
+                            // console.log(resp.centers[index].sessions[index1].min_age_limit <= parseInt(min_age_booking));
+                            // console.log(jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1);
+                            if ((resp.centers[index].sessions[index1].available_capacity_dose1 >= parseInt(minimum_slots)) && (resp.centers[index].sessions[index1].min_age_limit == min_age_booking) && (jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1)){
+
+                                out = {
+                                    'name': resp.centers[index].name,
+                                    'district': resp.centers[index].district_name,
+                                    'pincode': resp.centers[index].pincode,
+                                    'center_id': resp.centers[index].center_id,
+                                    'available': resp.centers[index].sessions[index1].available_capacity,
+                                    'date': resp.centers[index].sessions[index1].date,
+                                    'slots': resp.centers[index].sessions[index1].slots,
+                                    'session_id': resp.centers[index].sessions[index1].session_id
+                                }
+                                temp_options.push(out)
+                            }
+                        });
+                    });
+                }else if(dose_type == 2){
+                    $.each(resp.centers,function(index,key){
+                        $.each(resp.centers[index].sessions,function(index1,key1){
+                            // console.log('Center Conditions matching');
+                            // console.log(resp.centers[index].sessions[index1].available_capacity >= parseInt(minimum_slots));
+                            // console.log(resp.centers[index].sessions[index1].min_age_limit <= parseInt(min_age_booking));
+                            // console.log(jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1);
+                            if ((resp.centers[index].sessions[index1].available_capacity_dose2 >= parseInt(minimum_slots)) && (resp.centers[index].sessions[index1].min_age_limit == min_age_booking) && (jQuery.inArray(resp.centers[index].fee_type,fee_type) != -1)){
+
+                                out = {
+                                    'name': resp.centers[index].name,
+                                    'district': resp.centers[index].district_name,
+                                    'pincode': resp.centers[index].pincode,
+                                    'center_id': resp.centers[index].center_id,
+                                    'available': resp.centers[index].sessions[index1].available_capacity,
+                                    'date': resp.centers[index].sessions[index1].date,
+                                    'slots': resp.centers[index].sessions[index1].slots,
+                                    'session_id': resp.centers[index].sessions[index1].session_id
+                                }
+                                temp_options.push(out)
+                            }
+                        });
+                    });
+                }
+                        
+            }       
+        }
+        console.log(temp_options);
+        $.when.apply($, temp_options).then(function() {
+            //do something with newArray works!! here is full
+            resolve(temp_options);
+        });
+    });
+}
+
+async function startLoop(term,history,mobile,token){
+    console.log('Starting Searching Loop');
+    return new Promise(async function(resolve,reject){
+        var d = new Date();
+        var curr_date = d.getDate();
+        var curr_month = d.getMonth() + 1; //Months are zero based
+        var curr_year = d.getFullYear();
+        search_date = '';
+        if(start_date == 2){
+            search_date = String(curr_date+1).padStart(2,'0') + "-" + String(curr_month).padStart(2,'0') + "-" + curr_year;
+        }else if(start_date == 1){
+            search_date = String(curr_date).padStart(2,'0') + "-" + String(curr_month).padStart(2,'0') + "-" + curr_year;
+        }else{
+            search_date = start_date;
+        }
+        token_valid = true;
+        running_loop = true;
+        if(vaccine_type != '' || vaccine_type != null){
+            vaccine_url = "&vaccine="+vaccine_type;
+        }
+        // alert('toke'+token_valid);
+        while(token_valid){
+            token_valid = true;
+            await loopFunction(term,history,mobile,token).then(function(token_val){
+                token_valid = token_val;
+                console.log('Loop completed token is '+token_valid);
+                if(!token_valid){
+                    resolve(true);
+                }
+            });
+        }
+
+
+        // do {
+        //     alert('loop running');
+        //     //search_date
+        //     //min_age_booking
+        //     //beneficiary_dtls
+        //     //location_dtls
+        //     //search_option
+        //     //minimum_slots
+        //     //refresh_freq
+        //     //auto_book
+        //     //start_date
+        //     //vaccine_type
+        //     //fee_type
+        //     const token_valid1 = await loop_function(term,mobile,token,history);
+        //     if(token_valid1){
+        //         token_valid = true;
+        //     }else{
+        //         token_valid = false;
+        //     }
+        // } while(token_valid);
+
+        // refresh_freq*1000);
+    });
+}
+
+function displayTable(title,table,term,index=true){
+    if(index){
+        var headingarray = ['#'];
+        var rowsarray = [];
+        $.each(table, function(index,rows){
+            if(headingarray.length == 1){
+                $.each(rows,function(index1,key1){
+                    headingarray.push(index1);
+                });
+                rowsarray.push(headingarray);
+            }   
+            var rowtemp = [index+1];
+            $.each(rows,function(index1,key1){
+                rowtemp.push(key1);
+            });
+            rowsarray.push(rowtemp);
+        });
+    }else{
+        var headingarray = ['#'];
+        var rowsarray = [];
+        $.each(table, function(index,rows){ 
+            if(Array.isArray(rows)){
+                if(headingarray.length == 1){
+                    $.each(rows,function(index1,key1){
+                        headingarray.push(key1);
+                    });
+                    rowsarray.push(headingarray);
+                }else{
+                    var rowtemp = [index];
+                    $.each(rows,function(index1,key1){
+                        rowtemp.push(key1);
+                    });
+                    rowsarray.push(rowtemp);
+                } 
+            }else{
+                if(headingarray.length == 1){
+                    headingarray.push(rows);
+                    rowsarray.push(headingarray);
+                }else{
+                    rowsarray.push([index,rows]);
+                } 
+            }  
+        });
+    }
+    
+
+    // var table = AsciiTable.factory({
+    //   title: title
+    // , heading: headingarray
+    // , rows: rowsarray 
+    // });
+    // term.echo($(table));
+    console.log(rowsarray);
+    term.echo(title);
+    table = ascii_table(rowsarray,true);
+    term.echo(table);
+}
+
+async function displayInfoDict(data,term){
+    term.echo("\n================================= Confirm Info =================================\n");
+    var ben = data.beneficiary_dtls.length;
+    displayTable('Beneficiary Ditals :',data.beneficiary_dtls,term);
+    term.echo('\n');
+    if(data.search_option == 1){
+        displayTable('Location Pincode Selected:',data.location_dtls,term);
+    }else{
+        displayTable('Location District Selected:',data.location_dtls,term);
+    }
+    term.echo('\n');
+    
+    // var table = AsciiTable.factory({
+    //     rows: [
+    //     ['Total Beneficiary Selected',data.beneficiary_dtls.length],
+    //     ['Search Option (1 for Pincode AND 2 for District)',data.search_option],
+    //     ['Minimum Search Slot',data.minimum_slots],
+    //     ['Refresh Frequency',data.refresh_freq],
+    //     ['Auto Book Enable',data.auto_book],
+    //     ['Start Date',data.start_date],
+    //     ['Vaccin Type',data.vaccine_type],
+    //     ['Fee Type',data.fee_type],
+    //     ] 
+    // });
+    // term.echo($(table));
+    term.echo('Other Details:');
+    var rowsarray = [
+        ['Total Beneficiary Selected',data.beneficiary_dtls.length],
+        ['Search Option (1 for Pincode AND 2 for District)',data.search_option],
+        ['Minimum Search Slot',data.minimum_slots],
+        ['Refresh Frequency',data.refresh_freq],
+        ['Auto Book Enable',data.auto_book],
+        ['Start Date',data.start_date],
+        ['Vaccin Type',data.vaccine_type],
+        ['Fee Type',data.fee_type],
+        ['Dose Number',data.dose_number]
+        ] ;
+    table = ascii_table(rowsarray,false);
+    term.echo(table);
+
+}
+
+async function getBeneficiaries(term,history,mobile,token){
+    console.log('Taking Beneficiary choice');
+    return new Promise((resolve,reject)=>{
+        term.echo("Fetching registered beneficiaries.. ");
+         $.post( "https://gujarathelpline.in/api/getBeneficiaries", { token: token}, function(data){
+            if(data == 'Unauthenticated access!'){
+                term.echo('Unable to fetch beneficiaries');
+                term.exec('end', true);
+            }else{
+                beneficiaries_data = JSON.parse(data).beneficiaries;
+                var current = new Date();
+                var current_year = current.getFullYear();
+                var refined_beneficiaries = [];
+                for (var index = 0; index < beneficiaries_data.length; index++) {
+                    beneficiaries_data[index];
+                    beneficiaries_data[index].age = current_year - beneficiaries_data[index].birth_year;
+                    tmp = {
+                        'bref_id': beneficiaries_data[index].beneficiary_reference_id,
+                        'name': beneficiaries_data[index].name,
+                        'vaccine': beneficiaries_data[index].vaccine,
+                        'age': beneficiaries_data[index].age,
+                        'status': beneficiaries_data[index].vaccination_status
+                    };
+                    // term.echo(JSON.stringify(tmp));    
+                    refined_beneficiaries.push(tmp);
+                }
+                // term.echo(JSON.stringify(refined_beneficiaries[1]));    
+                // display_table(refined_beneficiaries)
+                term.echo("\n================================= Beneficiary Detail =================================\n");
+                displayTable('List of beneficiaries: ',refined_beneficiaries,term);
+                
+                term.echo("\n\
+    ################# IMPORTANT NOTES #################\n\
+    # 1. While selecting beneficiaries, make sure that selected beneficiaries are all taking the same dose: either first OR second.\n\
+    #    Please do no try to club together booking for first dose for one beneficiary and second dose for another beneficiary.\n\
+    #\n\
+    # 2. While selecting beneficiaries, also make sure that beneficiaries selected for second dose are all taking the same vaccine: COVISHIELD OR COVAXIN.\n\
+    #    Please do no try to club together booking for beneficiary taking COVISHIELD with beneficiary taking COVAXIN.\n\
+    #\n\
+    # 3. If you're selecting multiple beneficiaries, make sure all are of the same age group (45+ or 18+) as defined by the govt.\n\
+    #    Please do not try to club together booking for younger and older beneficiaries.\n\
+    ###################################################");
+
+                history.disable();
+                term.push(async function(reqd_beneficiaries_index) {
+                    if (reqd_beneficiaries_index.match(/^\d+(,\d+)*$/)){
+                        beneficiary_dtls = [];
+                        var vaccine_types = [];
+                        var age_group = [];
+                        reqd_beneficiaries_index_list = reqd_beneficiaries_index.split(',');
+                        var temp_list = [];
+                        $.each(reqd_beneficiaries_index_list, function(index,key) {
+                            if(!(jQuery.inArray(key,temp_list) != -1)){
+                                temp_list.push(key);
+                                if(index != null){
+                                    beneficiary_dtls.push(refined_beneficiaries[key-1]);    
+                                }
+                                if(!(jQuery.inArray(refined_beneficiaries[key-1].vaccine, vaccine_types) != -1)){
+                                    vaccine_types.push(refined_beneficiaries[key-1].vaccine)
+                                }
+                                if(refined_beneficiaries[key-1].age < 45){
+                                   if(!(jQuery.inArray('18', age_group) != -1)){
+                                        age_group.push('18')
+                                    } 
+                                }else if(refined_beneficiaries[key-1].age >= 45){
+                                    if(!(jQuery.inArray('45', age_group) != -1)){
+                                        age_group.push('45')
+                                    }
+                                }
+                            }
+                        });
+
+                        if(vaccine_types.length != 1){
+                            term.echo("All beneficiaries in one attempt should have the same vaccine type. Found vaccine type "+vaccine_types.length)
+                        }else if(age_group.length != 1){
+                                term.echo("All beneficiaries in one attempt should have the same age Group. Found age group "+age_group.length)
+                        }else{
+                            displayTable('Selected beneficiaries: ',beneficiary_dtls,term);
+
+                            vaccine_type = vaccine_types[0];
+                            term.pop();
+                            history.enable();
+                            //resolve
+                            resolve(beneficiary_dtls);
+                        }
+                        
+                    }else{
+                        term.echo('Enter correct index list');
+                    }
+                }, {
+                    prompt: 'Enter comma separated index numbers of beneficiaries to book for : '
+                });
+
+            }
+        });
+    });
+}
+
+async function getVaccinePreference(term,history,mobile,token){
+    console.log('selecting Vaccine Preference')
+    // if all([beneficiary['status'] == 'Partially Vaccinated' for beneficiary in beneficiary_dtls]) else None
+     return new Promise((resolve,reject)=>{
+        if(vaccine_type == ''){
+            term.echo('It seems you\'re trying to find a slot for your first dose. Do you have a vaccine preference?');
+            history.disable();
+            term.push(async function(preference) {
+                if(preference == '' || preference == null){
+                    vaccine_type = '';
+                    term.pop();
+                    history.enable();
+                    //next call
+                    resolve(vaccine_type);
+                }else{
+                    if (preference.match(/^[0-2]$/)){
+                        if(preference == 2){
+                            vaccine_type = 'COVAXIN';
+                        }else if(preference == 1){
+                            vaccine_type = 'COVISHIELD';
+                        }else if(preference == 1){
+                            vaccine_type = 'SPUTNIK V';
+                        }else{
+                            vaccine_type = '';
+                        }
+                        term.pop();
+                        history.enable();
+                        //next call
+                        resolve(vaccine_type);
+                    }else{
+                        term.echo('Enter correct preference');
+                    }
+                }
+            }, {
+                prompt: 'Enter 0 for No Preference, 1 for COVISHIELD, or 2 for COVAXIN, or 3 for SPUTNIK V. Default 0 :'
+            });
+        }else{
+            //next call
+            resolve(vaccine_type);
+        }
+    });
+}
+
+async function getAreaData(term,history,mobile,token){
+    console.log('selecting Area')
+     return new Promise((resolve,reject)=>{
+        term.echo('================================= Location Info =================================');
+        history.disable();
+        term.push(function(search_option_in) {
+            if(search_option_in == '' || search_option_in == null){
+                search_option = 2;
+                term.pop();
+                history.enable();
+                //next call
+                resolve(getDistricts(term,history,mobile,token));
+            }else if(search_option_in.match(/^[1-2]$/)){
+                search_option = search_option_in;
+                term.pop();
+                history.enable();
+                if(search_option == 2){
+                    //next call
+                    resolve(getDistricts(term,history,mobile,token));
+                }else if(search_option == 1){
+                    //next call
+                    resolve(getPincodes(term,history,mobile,token));
+                }
+            }else{
+                term.echo('Enter correct search option');
+            }
+            
+        }, {
+            prompt: 'Search by Pincode? Or by State/District? Enter 1 for Pincode or 2 for State/District. (Default 2) : '
+        });
+    });
+}
+
+
+async function getDistricts(term,history,mobile,token){
+    console.log('selecting District')
+     return new Promise((resolve,reject)=>{
+        term.echo("Fetching state list.. ")
+         $.get( "https://cdn-api.co-vin.in/api/v2/admin/location/states", function(data){
+            if(data != null && data != 'Unauthenticated access!'){
+                // state_list = JSON.parse(data).states;
+                state_list = data.states;
+                refinedStateList = ['State Name'];
+                $.each(state_list,function(index,key){
+                    refinedStateList.push(key.state_name);
+                });
+                displayTable('State List :',refinedStateList,term,false);
+
+                history.disable();
+                term.push(async function(state_id) {
+                    if(state_id.match(/^[1-9]$|^[1-2]\d$|^3[0-8]$/)){
+                        if(!(jQuery.inArray(state_id, state_list) != -1)){
+
+                            search_state_id = state_list[state_id-1].state_id
+                            term.echo("Fetching "+state_list[state_id-1].state_name+" districts list.. ");
+                            $.get( "https://cdn-api.co-vin.in/api/v2/admin/location/districts/"+search_state_id, function(data){
+                                if(data != null && data != 'Unauthenticated access!'){
+                                    term.pop();//state input call
+                                    history.enable();//state input call
+
+                                    // district_list = JSON.parse(data).districts;
+                                    district_list = data.districts;
+
+                                    refinedDistrictList = ['District Name'];
+                                    $.each(district_list,function(index,key){
+                                        refinedDistrictList.push(key.district_name);
+                                    });
+                                    displayTable('District List :',refinedDistrictList,term,false);
+
+                                    term.push(async function(district_id) {
+                                        if (district_id.match(/^(\d,*)*\d$/)){
+
+                                            locations_districts = [];
+                                            district_id_list = district_id.split(',');
+                                            var idx = 0;
+                                            locations_districts_temp = [];
+                                            $.each(district_id_list, function(index,key) {
+                                                if(index != null){
+                                                    if(!(jQuery.inArray(key-1, locations_districts) != -1)){
+                                                        if(!(jQuery.inArray(key, locations_districts_temp) != -1)){
+                                                            locations_districts_temp.push(key);
+                                                            locations_districts.push({
+                                                                'district_id': district_list[key-1].district_id,
+                                                                'district_name': district_list[key-1].district_name,
+                                                                'alert_freq': 440 + ((2 * idx) * 110)
+                                                                });
+                                                            idx++;
+                                                        }
+                                                    }
+                                                }
+                                            });
+
+                                            displayTable('Selected District as Below:',locations_districts,term);
+
+                                            if(idx == 0){
+                                                term.echo('Enter Valid District Index')
+                                            }else{
+                                                term.pop();//districts input call
+                                                history.enable();//districts input call
+                                                //next call
+                                                resolve(locations_districts);
+                                            }
+
+                                        }else{
+                                            term.echo('Enter Valid District Index')
+                                        }
+                                    }, {
+                                        prompt: 'Enter comma separated index numbers of districts to monitor : '
+                                    });
+
+                                }else{
+                                    term.echo('Unable to fetch District List');
+                                    term.exec('end', true);
+                                }
+                            });
+
+
+                        }else{
+                            term.echo('Enter Valid State Index');
+                        }
+                    }else{
+                        term.echo('Enter Valid state Index');
+                    }                       
+                }, {
+                    prompt: 'Enter State index: '
+                });
+            }else{
+                term.echo('Unable to fetch State List');
+                term.exec('end', true);
+            }
+        });
+    });
+}
+
+async function getPincodes(term,history,mobile,token){
+    console.log('Geting Pincode');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(function(pincodes) {
+            if (pincodes.match(/^(\d{6},*)*\d{6}$/)){
+                locations = [];
+                pincodes_list = pincodes.split(',');
+                var idx = 0;
+                $.each(pincodes_list, function(index,key) {
+                    if(index != null){
+                        if(!(jQuery.inArray(key, locations) != -1)){
+                            locations.push({
+                                'pincode': key,
+                                    'alert_freq': 440 + ((2 * idx) * 110)
+                                });
+                            idx++;
+                        }
+                    }
+                });
+                displayTable('Selected Pincode as Below:',locations,term);
+
+                term.pop();
+                history.enable();
+                //next call
+                resolve(locations);
+            }else{
+                term.echo('Enter correct pincodes');
+            }
+        }, {
+            prompt: 'Enter comma separated pincodes to monitor: '
+        });
+    });
+}
+
+async function getAvailability(term,history,mobile,token){
+    console.log('Geting Slot availability');
+    term.echo('================================= Additional Info =================================');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(async function(availability_in) {
+            if(availability_in == null){
+                minimum_slots = beneficiary_dtls.length;
+                term.pop();
+                history.enable();
+                //next call
+                resolve(minimum_slots);
+            }else{
+                if (availability_in.match(/^[0-9]*$/)){
+                    minimum_slots = availability_in;
+                    term.pop();
+                    history.enable();
+                    //next call
+                    resolve(minimum_slots);
+                }else{
+                    term.echo('Enter correct availability');
+                }
+            }
+        }, {
+            prompt: 'Filter out centers with availability less than ? Minimum '+beneficiary_dtls.length+' : '
+        });
+    });
+}
+
+async function getRefreshFreq(term,history,mobile,token){
+    console.log('Geting Refresh Frequency');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(async function(refresh_freq_in) {
+            if(refresh_freq_in == '' || refresh_freq_in == null){
+                refresh_freq = 15;
+                term.pop();
+                history.enable();
+                //next call
+                resolve(refresh_freq);
+            }else{
+                if (refresh_freq_in.match(/^[0-9]*$/) && (refresh_freq_in >= 5)){
+                    refresh_freq = refresh_freq_in;
+                    term.pop();
+                    history.enable();
+                    //next call
+                    resolve(refresh_freq);
+                }else{
+                    term.echo('Enter correct refresh time');
+                }
+            }
+        }, {
+            prompt: 'How often do you want to refresh the calendar (in seconds)? Default 15. Minimum 5. : '
+        });
+    });
+}
+
+async function getSearchDate(term,history,mobile,token){
+    console.log('Geting Search Date');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(async function(start_date_in) {
+            if(start_date_in == '' || start_date_in == null){
+                start_date = 2;
+                term.pop();
+                history.enable();
+                //next call
+                resolve(start_date);
+            }else if(jQuery.inArray(start_date_in, ['1','2']) != -1){
+                start_date = start_date_in;
+                term.pop();
+                history.enable();
+                //next call
+                resolve(start_date);
+            }else{
+                // %d-%m-%Y valid date format
+                if (start_date_in.match(/^(0[1-9]|1\d|2\d|3[01])-(0[1-9]|1[0-2])-(19|20)\d{2}$/)){
+                    start_date = start_date_in;
+                    term.pop();
+                    history.enable();
+                    //next call
+                    resolve(start_date);
+                }else{
+                    term.echo('Enter correct refresh time');
+                }
+            }
+
+        }, {
+            prompt: 'Search for next seven day starting from when? Use 1 for today, 2 for tomorrow, or provide a date in the format DD-MM-YYYY. Default 2: '
+        });
+    });
+}
+
+async function getFeeTypePreference(term,history,mobile,token){
+    console.log('Geting Fee preference');
+    return new Promise((resolve,reject)=>{
+        term.echo('Do you have a fee type preference?');
+        history.disable();
+        term.push(async function(fee_type_in) {
+            if(fee_type_in == null || fee_type_in == '' || fee_type_in == 0){
+                fee_type = ['Free', 'Paid'];
+                term.pop();
+                history.enable();
+                //next call
+                resolve(fee_type);
+            }else if(jQuery.inArray(fee_type_in, ['1','2']) != -1){
+                if(fee_type_in == 1){
+                    fee_type = ['Free'];
+                }else{
+                    fee_type = ['Paid'];
+                }
+                term.pop();
+                history.enable();
+                //next call
+                resolve(fee_type);
+            }else{
+                fee_type = ['Free', 'Paid'];
+                term.pop();
+                history.enable();
+                //next call
+                resolve(fee_type);
+            }
+
+        }, {
+            prompt: 'Enter 0 for No Preference, 1 for Free Only, or 2 for Paid Only. Default 0 : '
+        });  
+    });
+}
+
+async function getAutoBookingPreference(term,history,mobile,token){
+    console.log('Geting Auto Booking preference');
+    return new Promise((resolve,reject)=>{
+        term.echo('=========== CAUTION! =========== CAUTION! CAUTION! =============== CAUTION! =======\n\
+===== BE CAREFUL WITH THIS OPTION! AUTO-BOOKING WILL BOOK THE FIRST AVAILABLE CENTRE, DATE, AND A RANDOM SLOT! =====');
+        history.disable();
+        term.push(async function(auto_book_in) {
+            if(auto_book_in == '' || auto_book_in == null){
+                auto_book = 'no';
+                term.pop();
+                history.enable();
+                //next call
+                resolve(auto_book);
+            }else if(auto_book_in == 'yes-please'){
+                auto_book = 'yes-please';
+                term.pop();
+                history.enable();
+                //next call
+                resolve(auto_book);
+            }else{
+                auto_book = 'no';
+                term.pop();
+                history.enable();
+                //next call
+                resolve(auto_book);
+            }
+
+        }, {
+            prompt: 'Do you want to enable auto-booking? (yes-please or no) Default no: '
+        });  
+    });
+}
+
+async function confirmDetails(term,history,mobile,token){
+    console.log('Display detail for confirmation');
+    return new Promise((resolve,reject)=>{
+        if(search_option == 1){
+            location_dtls = locations;
+        }else{
+            location_dtls = locations_districts;
+        }
+
+        min_age_booking = 200;
+        $.each(beneficiary_dtls, function(index,key){
+            if(beneficiary_dtls[index].age < min_age_booking){
+                min_age_booking = beneficiary_dtls[index].age;
+            }
+        });
+        if(min_age_booking < 45){
+            min_age_booking = 18;
+        }else{
+            min_age_booking = 45;
+        }
+        dose_type = 1;
+        if(beneficiary_dtls[0].status == 'Partially Vaccinated'){
+            dose_type = 2;
+        }
+
+
+        collected_details = {
+            'beneficiary_dtls': beneficiary_dtls,
+            'location_dtls': location_dtls,
+            'search_option': search_option,
+            'minimum_slots': minimum_slots,
+            'refresh_freq': refresh_freq,
+            'auto_book': auto_book,
+            'start_date': start_date,
+            'vaccine_type': vaccine_type,
+            'fee_type': fee_type,
+            'dose_number':dose_type
+        }
+        displayInfoDict(collected_details,term);
+
+        term.echo('================================= Save Info =================================')
+        history.disable();
+        term.push(function(yes) {
+            if(yes == 'n'){
+                term.echo('Not Saving Data for Future use....')
+                term.pop();
+                history.enable();
+                //next call taking old data and starting loop
+                resolve('Not Saved');
+            }else if(yes == null || yes == '' || yes == 'y'){
+                term.echo('Saving Data for Future use....')
+
+                    $.post( "https://gujarathelpline.in/api/saveData", { mobile: mobile,collected_details:JSON.stringify(collected_details)}, function(data){
+                        if(data == 'saved'){
+                            term.echo('Data Saved In Json File For Future use.');
+                            term.pop();
+                            history.enable();
+                            //next call taking old data and starting loop
+                            resolve(data);
+                        }else{
+                            term.echo('There is some problem with data saving');
+                            term.pop();
+                            history.enable();
+                            term.exec('end',true);
+                        }
+                    });                
+            }
+        }, {
+            prompt: 'Would you like to save this as a JSON file for easy use next time?: (y/n Default y): '
+        });
+    });
+}
+
+async function confirmAndProceed(term,history,mobile,token){
+    console.log('Wait to proceed with selected Data');
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(async function(confirm_in) {
+            if(confirm_in == null || confirm_in == '' || confirm_in == 'y'){
+                term.pop();
+                history.enable();
+                //next call
+                resolve('yes');
+            }else{
+                term.pop();
+                history.enable();
+                term.exec('end',true);
+            }
+
+        }, {
+            prompt: 'Proceed with above info (y/n Default y) : '
+        });  
+    });
+}
+
+async function takeNewData(term,history,mobile,token){
+
+    console.log('Taking New data');
+    running_loop = false;
+    collected_details,old_data,search_date = null;
+    refined_beneficiaries,beneficiary_dtls,locations,locations_districts,fee_type,location_dtls,stucked_center = [];
+    vaccine_type,search_option,search_state_id,search_district_id,minimum_slots,refresh_freq,start_date,auto_book,min_age_booking,choice,choice_option,vaccine_url,new_req,dose_type = null;
+
+    await getBeneficiaries(term,history,mobile,token).then((selectedBeneficiaries)=>console.log('Selected Beneficiaries: '+selectedBeneficiaries.length));
+    await getVaccinePreference(term,history,mobile,token).then((selectedVaccine)=>console.log('Selected Vaccine: '+selectedVaccine));
+    await getAreaData(term,history,mobile,token).then((selectedArea)=>console.log('Selected Area: '+selectedArea.length));
+    await getAvailability(term,history,mobile,token).then((slotAvailabilty)=>console.log('Slot availability: '+slotAvailabilty));
+    await getRefreshFreq(term,history,mobile,token).then((refresFrequency)=>console.log('Refresh Frequency: '+refresFrequency));
+    await getSearchDate(term,history,mobile,token).then((searchDate)=>console.log('Search Date: '+searchDate));
+    await getFeeTypePreference(term,history,mobile,token).then((feePreference)=>console.log('Fee Preference: '+feePreference.length));
+    await getAutoBookingPreference(term,history,mobile,token).then((autobook)=>console.log('Auto Book Preference: '+autobook));
+    await confirmDetails(term,history,mobile,token).then((savedornot)=>console.log('Saved or not: '+savedornot));
+    await confirmAndProceed(term,history,mobile,token).then((proceed)=>console.log('Start loop with data or not: '+proceed));
+}
+
+async function checkPreviousData(term,history,mobile,token){
+    //check for previous data if stored and if stored then copy return true, else return false
+    console.log('checking Previous data');
+    return new Promise((resolve,reject)=>{
+        $.post( "https://gujarathelpline.in/api/checkPreviousData", { mobile:mobile}, function(data){
+            if(data == 'not-found'){
+                //next call
+                // takeNewData(term,history,mobile,token);
+                resolve(false);
+            }else{
+                console.log('confirming Previous data');
+                old_data = JSON.parse(data);
+                term.echo("\n=================================== Note ===================================\n\
+    Info from perhaps a previous run already exists in directory.\n\
+    IMPORTANT: If this is your first time running this version of the application, DO NOT USE THE FILE!")
+                history.disable();
+                term.push(function(yes) {
+                    if(yes == 'n'){
+                        term.pop();
+                        history.enable();
+                        //next call taking new data
+                        // takeNewData(term,history,mobile,token);;
+                        resolve(false);
+                    }else if(yes == null || yes == '' || yes == 'y'){
+                        term.pop();
+                        history.enable();
+                        //next call display
+                        var temp_dose_type = 1;
+                        if(old_data.beneficiary_dtls[0].status == 'Partially Vaccinated'){
+                            temp_dose_type = 2;
+                        }
+
+                        old_data.dose_number = temp_dose_type;
+
+                        displayInfoDict(old_data,term);
+                        history.disable();
+                        term.push(async function(yes) {
+                            if(yes == 'n'){
+                                term.echo('Details not confirmed. Taking New Data.')
+                                term.pop();
+                                history.enable();
+                                //next call taking new data
+                                // takeNewData(term,history,mobile,token);
+                                resolve(false);
+                            }else if(yes == null || yes == '' || yes == 'y'){
+                                //copy old data in new data
+                                console.log('copy Previous data');
+                                collected_details = old_data;
+                                if(old_data.search_option == 1){
+                                    locations = old_data.location_dtls;
+                                }else{
+                                    locations_districts = old_data.location_dtls;
+                                }
+                                min_age_booking = 200;
+                                $.each(old_data.beneficiary_dtls, function(index,key){
+                                    if(old_data.beneficiary_dtls[index].age < min_age_booking){
+                                        min_age_booking = old_data.beneficiary_dtls[index].age;
+                                    }
+                                });
+                                if(min_age_booking < 45){
+                                    min_age_booking = 18;
+                                }else{
+                                    min_age_booking = 45;
+                                }
+                                dose_type = 1;
+                                if(old_data.beneficiary_dtls[0].status == 'Partially Vaccinated'){
+                                    dose_type = 2;
+                                }
+
+                                beneficiary_dtls = old_data.beneficiary_dtls;
+                                location_dtls = old_data.location_dtls;
+                                search_option = old_data.search_option;
+                                minimum_slots = old_data.minimum_slots;
+                                refresh_freq = old_data.refresh_freq;
+                                auto_book = old_data.auto_book;
+                                start_date = old_data.start_date;
+                                vaccine_type = old_data.vaccine_type;
+                                fee_type = old_data.fee_type;
+                                term.pop();
+                                history.enable();
+                                //next call taking old data and starting loop
+                                // await start_loop(term,mobile,token,history);
+                                resolve(true);
+                            }
+                        }, {
+                            prompt: 'Proceed with above info (y/n Default y) : '
+                        });
+                    }
+                }, {
+                    prompt: 'Would you like to see the details and confirm to proceed? (y/n Default y): '
+                });
+            }
+        });
+    });
+}
+
+async function verifyOtp(term,mobile,otp,txnId,history){
+    return new Promise((resolve,reject)=>{
+        // varify otp
+        $.post( "https://gujarathelpline.in/api/validateMobileOtp", { otp: otp,txnId:txnId}, function(data){
+            if(data == 'wrong otp!'){
+                term.echo('Unable to verify');
+                history.disable();
+                term.push(async function(yesin) {
+                    if(yesin == 'n'){
+                        term.pop();
+                        history.enable();
+                        term.exec('end', true);
+                    }else if(yesin == null || yesin == '' || yesin == 'y'){
+                        term.pop();
+                        history.enable();
+                        resolve(false);
+                    }
+                }, {
+                    prompt: 'Retry with '+mobile+' ? (y/n Default y): '
+                });
+            }else{
+                data = JSON.parse(data);
+                if(data.isNewAccount != null && data.isNewAccount == 'N'){
+                    token_valid = true;
+                    token = data.token;
+                    term.echo('Token Generated: '+token);
+                    if(running_loop){
+                        console.log('Back to Loop');
+                        // loopFunction(term,mobile,token,history);
+                        resolve(true)
+                    }else{
+                        // checkPreviousData(term,mobile,token,history);
+                        resolve(token);
+                    }
+                }else{
+                    term.echo('Number you entered is not registered yet go on official website and register First');
+                    term.exec('end', true);
+                }
+            }
+        });
+    });
+}
+
+async function generateTokenOTP(term,mobile,history) {
+    return new Promise((resolve,reject)=>{
+        // generate otp and varify it
+        $.post( "https://gujarathelpline.in/api/generateMobileOTP", { mobile: mobile}, function(data){
+            data = JSON.parse(data);
+            // term.echo(data.txnId);
+            if(data.txnId != null){
+                var current = new Date();
+                term.echo('Successfully requested OTP for mobile number '+mobile+' at '+current.toLocaleString()+'..');
+                history.disable();
+                term.push(function(otpin) {
+                    if(otpin == ''){
+                        term.pop();
+                        history.enable();
+                        resolve(false);
+                    }else{
+                        if (otpin.match(/^\d{6}$/)){
+                            // term.pause();
+                            txnId = data.txnId;
+                            otp = otpin
+                            term.pop();
+                            history.enable();
+                            resolve(txnId);
+                        }else{
+                            term.echo('Enter correct 6 Digit Otp code');
+                        }
+                    }
+                }, {
+                    prompt: 'Enter OTP (If this takes more than 2 minutes, press Enter to retry): '
+                });
+            }else{
+                term.echo('Enter correct number');
+                return false;
+            }
+            // term.echo(data);
+        });
+    });
+}
+
+async function takeNumber(term,history){
+    return new Promise((resolve,reject)=>{
+        history.disable();
+        term.push(function(mobilein) {
+            if (mobilein.match(/^\d{10}$/)){
+                mobile = mobilein;
+                term.pop();
+                history.enable(); 
+                resolve(mobilein);
+            }else{
+                term.echo('Enter correct number');
+            }
+        }, {
+            prompt: 'Enter Your 10 Digit Registered Number: '
+        });
+    });
+}
+async function verifyNumberByOtp(term,mobile,history){
+    return new Promise(async function(resolve,reject){
+         await generateTokenOTP(term,mobile,history).then(async function(txnId){
+            if(txnId == false){
+                await verifyNumberByOtp(term,mobile,history).then(function(resolve_all){
+                    resolve(token);
+                });
+            }else{
+                console.log('Verify Otp');
+                await verifyOtp(term,mobile,otp,txnId,history).then(async function(token_res){
+                    if(token_res == false){
+                        await verifyNumberByOtp(term,mobile,history).then(function(resolve_all){
+                            resolve(token);
+                        });
+                    }else{
+                        console.log('tokem generated');
+                        resolve(token);
+                    }
+                });
+            }
+        });
+    });
+}
+async function init(term,history){
+    await takeNumber(term,history).then((mobile)=>console.log('Entered Mobile: '+mobile));
+    await verifyNumberByOtp(term,mobile,history).then((token)=>console.log('token: '+token));
+    await checkPreviousData(term,history,mobile,token).then(async function(result){
+        if(result){
+            console.log('Previous Data Copy');
+        }else{
+            console.log('Take New Data')
+            await takeNewData(term,history,mobile,token);
+        }
+    });
+    await startLoop(term,history,mobile,token).then(function(result){
+        console.log('loop end'+result);
+        term.exec('end',true);
+    });
+}
+
+
+jQuery(function($) {
+    term = $('body').terminal({
+        end: function(){
+            this.echo('\n\nJust Type \"start\" and Enter to restart process');
+
+            // this.exec('end', true);
+        },
+        start: function(){
+            var history = this.history();
+            init(this,history);
+        },
+        
+    }, {
+        greetings: "   ______    _       _______   __   ___    ____  ____ \n\
+  / ____/___| |     / /  _/ | / /  /   |  / __ \\/ __ \\\n\
+ / /   / __ \\ | /| / // //  |/ /  / /| | / /_/ / /_/ /\n\
+/ /___/ /_/ / |/ |/ // // /|  /  / ___ |/ ____/ ____/ \n\
+\\____/\\____/|__/|__/___/_/ |_/  /_/  |_/_/   /_/      \n\
+\n\
+\n\
+1. This is Cowin Vaccination Slot Booking App for Demo Purpose Only made using cowin api available in public domain and this is not an authorised site to book a Vaccination Slot. Authorised Link for booking: https://selfregistration.cowin.gov.in/\n\
+\n\
+2. Follow the given step and It's will be Ok. First it take your mobile no to verify your account and then set your preferences for search and book a slot.\n\
+\n\
+3. For CO-Win website authetication it required a OTP sent on your registered mobile No. Once authenticated, Session will be valid for next 12 to 15 Mins, After that OTP will be regenerated for next session.\n\
+\n\
+4. In case of sessio expired and enter new otp there will be alert sound and same as well for the captcha to enter after finding available slot to confirm slot booking.\n\
+\n\
+4. Best time for slot booking is from morning 7 AM to 10 AM and Evening 4 PM to 9 PM.\n\
+\n\
+5. This Page doesn't require refreshing, just set your preferences to find slots, the tool itself will refresh with new data.\n\
+\n\
+6. Keeping Session live and staying on the Search page is the key to book a slot quickly.\n\
+\n\
+7. At any Given Step want to quiet just enter ctl + d\n\
+\n\
+\n\
+Just Type \"start\" and Enter ",
+        onBlur: function() {
+            // prevent loosing focus
+            return false;
+        }
+    });
+});
+
+</script>
+</body>
+</html>
