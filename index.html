@@ -166,7 +166,7 @@ jQuery.fn.sort = function() {
     return new Promise((resolve,reject)=>{
          $.ajax({
             type: "POST",
-            url: "https://gujarathelpline.in/api/getBeneficiaries",
+            url: "api/getBeneficiaries",
             data:{ token: token},
             async:false, 
             success: async function(data){
@@ -345,7 +345,7 @@ async function bookAppointment(term,mobile,token,history, details){
                 history.disable();
                 valid_captcha = false;
                 term.echo('================================= GETTING CAPTCHA ==================================================');
-                $.post("https://gujarathelpline.in/api/getCaptcha",{token :token},function(data){
+                $.post("api/getCaptcha",{token :token},function(data){
                     if(data != '' || data != 'Unauthenticated access!'){
                         captcha_resp = JSON.parse(data).captcha;
                         //display this captcha;
@@ -359,7 +359,7 @@ async function bookAppointment(term,mobile,token,history, details){
                                 term.echo('================================= ATTEMPTING BOOKING ==================================================');
                                 details.captcha = captcha_code_in;
 
-                                $.post("https://gujarathelpline.in/api/scheduleAppointment",{token :token,details:JSON.stringify(details)},function(data){
+                                $.post("api/scheduleAppointment",{token :token,details:JSON.stringify(details)},function(data){
                                     if(data != 'invald-input'){
                                         bookingresp = JSON.parse(data);
                                         term.echo('Booking Response Code: '+bookingresp.errorCode);
@@ -838,7 +838,7 @@ async function getBeneficiaries(term,history,mobile,token){
     console.log('Taking Beneficiary choice');
     return new Promise((resolve,reject)=>{
         term.echo("Fetching registered beneficiaries.. ");
-         $.post( "https://gujarathelpline.in/api/getBeneficiaries", { token: token}, function(data){
+         $.post( "api/getBeneficiaries", { token: token}, function(data){
             if(data == 'Unauthenticated access!'){
                 term.echo('Unable to fetch beneficiaries');
                 term.exec('end', true);
@@ -1358,7 +1358,7 @@ async function confirmDetails(term,history,mobile,token){
             }else if(yes == null || yes == '' || yes == 'y'){
                 term.echo('Saving Data for Future use....')
 
-                    $.post( "https://gujarathelpline.in/api/saveData", { mobile: mobile,collected_details:JSON.stringify(collected_details)}, function(data){
+                    $.post( "api/saveData", { mobile: mobile,collected_details:JSON.stringify(collected_details)}, function(data){
                         if(data == 'saved'){
                             term.echo('Data Saved In Json File For Future use.');
                             term.pop();
@@ -1425,7 +1425,7 @@ async function checkPreviousData(term,history,mobile,token){
     //check for previous data if stored and if stored then copy return true, else return false
     console.log('checking Previous data');
     return new Promise((resolve,reject)=>{
-        $.post( "https://gujarathelpline.in/api/checkPreviousData", { mobile:mobile}, function(data){
+        $.post( "api/checkPreviousData", { mobile:mobile}, function(data){
             if(data == 'not-found'){
                 //next call
                 // takeNewData(term,history,mobile,token);
@@ -1520,7 +1520,7 @@ async function checkPreviousData(term,history,mobile,token){
 async function verifyOtp(term,mobile,otp,txnId,history){
     return new Promise((resolve,reject)=>{
         // varify otp
-        $.post( "https://gujarathelpline.in/api/validateMobileOtp", { otp: otp,txnId:txnId}, function(data){
+        $.post( "api/validateMobileOtp", { otp: otp,txnId:txnId}, function(data){
             if(data == 'wrong otp!'){
                 term.echo('Unable to verify');
                 history.disable();
@@ -1563,7 +1563,7 @@ async function verifyOtp(term,mobile,otp,txnId,history){
 async function generateTokenOTP(term,mobile,history) {
     return new Promise((resolve,reject)=>{
         // generate otp and varify it
-        $.post( "https://gujarathelpline.in/api/generateMobileOTP", { mobile: mobile}, function(data){
+        $.post( "api/generateMobileOTP", { mobile: mobile}, function(data){
             data = JSON.parse(data);
             // term.echo(data.txnId);
             if(data.txnId != null){
