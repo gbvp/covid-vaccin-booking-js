@@ -250,17 +250,20 @@ if($_GET['function'] == 'scheduleAppointment'){
 		
 		$httpcode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
 		$header_size = curl_getinfo($curl, CURLINFO_HEADER_SIZE);
-        $header = substr($response, 0, $header_size);
-        $body = substr($response, $header_size);
-		curl_close($curl);
-        if(strpos($body, 'errorCode') !== false || strpos($body, 'error') !== false){
-            $data  = json_decode($body);
-            $data->status_code = $httpcode;
-            echo json_encode($data);
-        }else{
-            $data = 'invald-input';
-            echo $data;
-        }
+		$header = substr($response, 0, $header_size);
+		$body = substr($response, $header_size);
+			curl_close($curl);
+		if(strpos($body, 'errorCode') !== false || strpos($body, 'error') !== false){
+		    $data  = json_decode($body);
+		    $data->status_code = $httpcode;
+		    echo json_encode($data);
+		}else{
+		    $data  = json_decode($body);
+		    $data->errorCode = '';
+		    $data->error = '';
+		    $data->status_code = $httpcode;
+		    echo json_encode($data);
+		}
         
 	}else{
 		echo 'invald-input';
