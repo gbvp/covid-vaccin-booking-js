@@ -181,9 +181,7 @@ jQuery.fn.sort = function() {
                                 term.pop();
                                 history.enable();
                                 token_valid = false;
-                                await verifyNumberByOtp(term,mobile,history).then((token) => {
-                                    resolve(true);
-                                });
+                                resolve(false);
                             }
                         }else{
                             term.pop();
@@ -204,8 +202,10 @@ jQuery.fn.sort = function() {
                 }
             },
             error:function(data){
+                token_valid = false;
                 // data.status
                 term.echo('TOKEN INVALID');
+                resolve(false);
             }
         });
 
@@ -699,38 +699,20 @@ async function startLoop(term,history,mobile,token){
         // alert('toke'+token_valid);
         while(token_valid){
             token_valid = true;
-            await loopFunction(term,history,mobile,token).then(function(token_val){
+            await loopFunction(term,history,mobile,token).then(async function(token_val){
                 token_valid = token_val;
-                console.log('Loop completed token is '+token_valid);
-                if(!token_valid){
-                    resolve(true);
-                }
+                await verifyNumberByOtp(term,mobile,history).then(function(token_res){
+                    if(token_res != null){
+                        token = token;
+                        token_valid = true;
+                        console.log('Loop completed token is '+token_valid);     
+                    }else{
+                        token_valid = false;
+                        resolve(true);
+                    }
+                });
             });
         }
-
-
-        // do {
-        //     alert('loop running');
-        //     //search_date
-        //     //min_age_booking
-        //     //beneficiary_dtls
-        //     //location_dtls
-        //     //search_option
-        //     //minimum_slots
-        //     //refresh_freq
-        //     //auto_book
-        //     //start_date
-        //     //vaccine_type
-        //     //fee_type
-        //     const token_valid1 = await loop_function(term,mobile,token,history);
-        //     if(token_valid1){
-        //         token_valid = true;
-        //     }else{
-        //         token_valid = false;
-        //     }
-        // } while(token_valid);
-
-        // refresh_freq*1000);
     });
 }
 
@@ -1546,7 +1528,7 @@ async function verifyOtp(term,mobile,otp,txnId,history){
                     if(running_loop){
                         console.log('Back to Loop');
                         // loopFunction(term,mobile,token,history);
-                        resolve(true)
+                        resolve(token)
                     }else{
                         // checkPreviousData(term,mobile,token,history);
                         resolve(token);
