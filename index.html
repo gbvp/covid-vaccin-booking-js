@@ -234,6 +234,7 @@ async function choiceInput(term,history,mobile,token){
 
 async function loopFunction(term,history,mobile,token)
 {
+
     console.log('Starting Searching');
     return new Promise(async function(resolve,reject){
             // alert('loop running');
@@ -382,7 +383,6 @@ async function bookAppointment(term,mobile,token,history, details){
                                             // term.echo(`Response: ${bookingresp.status_code} : ${bookingresp.error}`);
                                             // return true;
                                             valid_captcha = true;
-                                            alert('captcha loop');
                                         }
                                     }else{
                                         term.echo('Invalid Token');
@@ -697,20 +697,22 @@ async function startLoop(term,history,mobile,token){
             vaccine_url = "&vaccine="+vaccine_type;
         }
         // alert('toke'+token_valid);
-        while(token_valid){
+         while(token_valid){
             token_valid = true;
             await loopFunction(term,history,mobile,token).then(async function(token_val){
                 token_valid = token_val;
-                await verifyNumberByOtp(term,mobile,history).then(function(token_res){
-                    if(token_res != null){
-                        token = token;
-                        token_valid = true;
-                        console.log('Loop completed token is '+token_valid);     
-                    }else{
-                        token_valid = false;
-                        resolve(true);
-                    }
-                });
+                if(!token_val){
+                    await verifyNumberByOtp(term,mobile,history).then(function(token_res){
+                        if(token_res != null){
+                            token = token_res;
+                            token_valid = true;
+                            console.log('Loop completed token is '+token_valid); 
+                        }else{
+                            token_valid = false;
+                            resolve(true);
+                        }
+                    });
+                }
             });
         }
     });
@@ -1674,8 +1676,6 @@ For latest Script visit https://github.com/gbvp/covid-vaccin-booking-js\n\
 5. This Page doesn't require refreshing, just set your preferences to find slots, the tool itself will refresh with new data.\n\
 \n\
 6. Keeping Session live and staying on the Search page is the key to book a slot quickly.\n\
-\n\
-7. At any Given Step want to quiet just enter ctl + d\n\
 \n\
 \n\
 Just Type \"start\" and Enter ",
